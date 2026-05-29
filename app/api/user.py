@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreate, UserLogin
 from app.models.user import User
 from app.db.database import get_db
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
+from app.core.auth import create_access_token
+from app.dependencies.auth import get_current_user
 
 router = APIRouter()
 
@@ -12,7 +13,6 @@ router = APIRouter()
 @router.post("/register")
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
 
-    # Check if email already exists
     existing_user = db.query(User).filter(
         User.email == user.email
     ).first()
@@ -23,19 +23,56 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
 
-    # Create new user
     new_user = User(
         username=user.username,
         email=user.email,
         hashed_password=hash_password(user.password)
     )
 
-    # Add user to database
     db.add(new_user)
 
-    # Save changes permanently
     db.commit()
 
     return {
         "message": "User created successfully"
+    }
+
+@router.post("/login")
+def login_user(user: UserLogin, db: Session = Depends(get_db)):
+
+    db_user = db.query(User).filter(
+        User.email == user.email
+    ).first()
+
+    if not db_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid email or password"
+        )
+
+    if not verify_password(
+        user.password,
+        db_user.hashed_password
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid email or password"
+        )
+
+    access_token = create_access_token(
+        data={"sub": db_user.email}
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+
+@router.get("/users/me")
+def get_me(current_user: User = Depends(get_current_user)):
+
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email
     }
