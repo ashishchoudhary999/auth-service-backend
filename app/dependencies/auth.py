@@ -11,8 +11,8 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 def get_current_user(
-        token: str = Depends(oauth2_scheme),
-        db: Session = Depends(get_db)
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
 ):
     
     email = verify_access_token(token)
