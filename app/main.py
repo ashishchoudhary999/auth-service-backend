@@ -1,16 +1,36 @@
 from fastapi import FastAPI
 
-from app.db.database import engine, Base
-from app.models.user import User
+from app.db.database import Base, engine
 
-from app.api.user import router as user_router
+from app.api.auth import router as auth_router
+from app.api.users import router as users_router
 
+
+# -------------------------
+# CREATE TABLES
+# -------------------------
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
 
-app.include_router(user_router)
+# -------------------------
+# APP INIT
+# -------------------------
+app = FastAPI(
+    title="Auth Service API",
+    version="1.0.0"
+)
 
+
+# -------------------------
+# ROUTERS
+# -------------------------
+app.include_router(auth_router)
+app.include_router(users_router)
+
+
+# -------------------------
+# HEALTH CHECK
+# -------------------------
 @app.get("/")
 def root():
-    return {"message": "Auth Service Running"}
+    return {"message": "Auth Service Running 🚀"}
