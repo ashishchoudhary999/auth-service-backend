@@ -16,6 +16,7 @@ Base.metadata.create_all(bind=engine)
 # APP INIT
 # -------------------------
 app = FastAPI(
+    
     title="Auth Service API",
     version="1.0.0"
 )
