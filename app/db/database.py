@@ -1,8 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-
 from app.core.config import DATABASE_URL
-
 
 # -------------------------
 # DATABASE ENGINE
@@ -13,7 +11,6 @@ engine = create_engine(
     pool_pre_ping=True
 )
 
-
 # -------------------------
 # SESSION LOCAL
 # -------------------------
@@ -22,7 +19,6 @@ SessionLocal = sessionmaker(
     autoflush=False,
     bind=engine
 )
-
 
 # -------------------------
 # BASE MODEL

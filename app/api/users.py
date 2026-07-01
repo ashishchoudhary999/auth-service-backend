@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from app.dependencies.auth import get_current_user
 from app.models.user import User
+from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -8,11 +9,6 @@ router = APIRouter(prefix="/users", tags=["Users"])
 # -------------------------
 # GET CURRENT USER
 # -------------------------
-@router.get("/me")
+@router.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
-
-    return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "email": current_user.email
-    }
+    return current_user

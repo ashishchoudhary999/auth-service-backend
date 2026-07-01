@@ -7,7 +7,12 @@ from app.db.database import get_db
 from app.models.user import User
 from app.models.token import RefreshToken
 
-from app.schemas.auth import UserCreate, UserLogin
+from app.schemas.auth import (
+    UserCreate,
+    UserLogin,
+    RefreshTokenRequest,
+    TokenResponse
+)
 
 from app.core.security import (
     hash_password,
@@ -16,6 +21,7 @@ from app.core.security import (
 )
 
 from app.dependencies.auth import get_current_user
+from app.core.config import REFRESH_TOKEN_EXPIRE_DAYS
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -23,13 +29,16 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 # -------------------------
 # REGISTER
 # -------------------------
-@router.post("/register")
+@router.post("/register", status_code=201)
 def register(user: UserCreate, db: Session = Depends(get_db)):
 
     existing_user = db.query(User).filter(User.email == user.email).first()
 
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
 
     new_user = User(
         username=user.username,
@@ -41,31 +50,46 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    return {"message": "User created successfully"}
+    return {
+        "id": new_user.id,
+        "email": new_user.email,
+        "created_at": new_user.created_at
+    }
 
 
 # -------------------------
-# LOGIN
+# LOGIN  ✅ Normal JSON body login
 # -------------------------
-@router.post("/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
+@router.post("/login", response_model=TokenResponse)
+def login(
+    credentials: UserLogin,          # ✅ plain JSON { "email": ..., "password": ... }
+    db: Session = Depends(get_db)
+):
+    db_user = db.query(User).filter(
+        User.email == credentials.email
+    ).first()
 
-    db_user = db.query(User).filter(User.email == user.email).first()
+    if not db_user or not verify_password(
+        credentials.password,
+        db_user.hashed_password
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
+        )
 
-    if not db_user:
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+    access_token = create_access_token(data={"sub": db_user.email})
 
-    if not verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+    refresh_token = secrets.token_hex(32)
 
-    # ACCESS TOKEN (30 min)
-    access_token = create_access_token(
-        data={"sub": db_user.email}
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        days=REFRESH_TOKEN_EXPIRE_DAYS
     )
 
-    # REFRESH TOKEN (7 days)
-    refresh_token = secrets.token_hex(32)
-    expires_at = datetime.utcnow() + timedelta(days=7)
+    # ✅ Delete old refresh tokens before issuing a new one
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == db_user.id
+    ).delete()
 
     db_refresh = RefreshToken(
         user_id=db_user.id,
@@ -87,26 +111,43 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 # REFRESH TOKEN
 # -------------------------
 @router.post("/refresh")
-def refresh(token: str, db: Session = Depends(get_db)):
-
+def refresh(
+    request: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
     db_token = db.query(RefreshToken).filter(
-        RefreshToken.token == token
+        RefreshToken.token == request.refresh_token
     ).first()
 
     if not db_token:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid refresh token"
+        )
 
-    if db_token.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Refresh token expired")
+    if db_token.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        db.delete(db_token)
+        db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail="Refresh token expired"
+        )
 
     user = db.query(User).filter(User.id == db_token.user_id).first()
 
-    new_access_token = create_access_token(
-        data={"sub": user.email}
+    new_access_token = create_access_token(data={"sub": user.email})
+
+    # ✅ Rotate refresh token on every use
+    new_refresh_token = secrets.token_hex(32)
+    db_token.token = new_refresh_token
+    db_token.expires_at = datetime.now(timezone.utc) + timedelta(
+        days=REFRESH_TOKEN_EXPIRE_DAYS
     )
+    db.commit()
 
     return {
         "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer"
     }
 
@@ -115,10 +156,14 @@ def refresh(token: str, db: Session = Depends(get_db)):
 # LOGOUT
 # -------------------------
 @router.post("/logout")
-def logout(token: str, db: Session = Depends(get_db)):
-
+def logout(
+    request: RefreshTokenRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     db_token = db.query(RefreshToken).filter(
-        RefreshToken.token == token
+        RefreshToken.token == request.refresh_token,
+        RefreshToken.user_id == current_user.id
     ).first()
 
     if db_token:
