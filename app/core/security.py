@@ -3,12 +3,16 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi.security import HTTPBearer
 from fastapi import HTTPException, status
+import warnings
 
 from app.core.config import (
     SECRET_KEY,
     ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
+
+# ✅ Suppress passlib bcrypt warning
+warnings.filterwarnings("ignore", ".*error reading bcrypt version.*")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
