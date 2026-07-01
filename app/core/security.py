@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 from fastapi.security import HTTPBearer
 from fastapi import HTTPException, status
-import warnings
+import bcrypt
 
 from app.core.config import (
     SECRET_KEY,
@@ -11,11 +10,7 @@ from app.core.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
-# ✅ Suppress passlib bcrypt warning
-warnings.filterwarnings("ignore", ".*error reading bcrypt version.*")
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# ✅ HTTPBearer for Swagger UI "paste token" box
 http_bearer = HTTPBearer()
 
 
@@ -23,14 +18,21 @@ http_bearer = HTTPBearer()
 # HASH PASSWORD
 # -------------------------
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # ✅ bcrypt directly — no passlib
+    pwd_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode("utf-8")
 
 
 # -------------------------
 # VERIFY PASSWORD
 # -------------------------
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    # ✅ bcrypt directly — no passlib
+    pwd_bytes = plain_password.encode("utf-8")
+    hashed_bytes = hashed_password.encode("utf-8")
+    return bcrypt.checkpw(pwd_bytes, hashed_bytes)
 
 
 # -------------------------
